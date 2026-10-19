@@ -9,6 +9,11 @@ import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
 import android.app.Activity
 import android.content.Intent
+import android.os.Build
+import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
+import android.os.ResultReceiver
 
 class MainActivity : FlutterActivity() {
     private var speech: TextToSpeech? = null
@@ -19,6 +24,31 @@ class MainActivity : FlutterActivity() {
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
+        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, "simplerunning/recording").setMethodCallHandler { call, result ->
+            when (call.method) {
+                "start" -> {
+                    val intent = Intent(this, RecordingService::class.java).apply {
+                        putExtra("reply", object : ResultReceiver(Handler(Looper.getMainLooper())) {
+                            override fun onReceiveResult(code: Int, data: Bundle?) {
+                                if (code == 0) result.success(null)
+                                else result.error("recording", data?.getString("error"), null)
+                            }
+                        })
+                    }
+                    try {
+                        if (Build.VERSION.SDK_INT >= 26) startForegroundService(intent)
+                        else startService(intent)
+                    } catch (error: RuntimeException) {
+                        result.error("recording", error.message, null)
+                    }
+                }
+                "stop" -> {
+                    stopService(Intent(this, RecordingService::class.java))
+                    result.success(null)
+                }
+                else -> result.notImplemented()
+            }
+        }
         speech = TextToSpeech(this) { status ->
             if (status == TextToSpeech.SUCCESS) {
                 ready = true
@@ -102,6 +132,9 @@ class MainActivity : FlutterActivity() {
     }
 
     override fun onDestroy() {
+        // The BLE connection belongs to this activity's Flutter engine. Never
+        // leave a notification or CPU lock behind after that engine is destroyed.
+        stopService(Intent(this, RecordingService::class.java))
         speech?.stop()
         speech?.shutdown()
         tones?.release()

@@ -117,6 +117,68 @@ class ManualStopwatch implements Stopwatch {
 }
 
 void main() {
+  DiscoveredDevice device() => DiscoveredDevice(
+    id: 'synthetic',
+    name: '',
+    serviceData: {},
+    serviceUuids: [],
+    manufacturerData: Uint8List(0),
+    rssi: -50,
+  );
+
+  test(
+    'failed background service cancels connection and releases resources',
+    () async {
+      final ble = FakeBle();
+      final states = <bool>[];
+      final model = CaptureModel(
+        ble,
+        null,
+        keepAwake: (enabled) async {
+          states.add(enabled);
+          if (enabled) throw StateError('Service unavailable');
+        },
+      );
+      await model.connect(device());
+      expect(model.active, isFalse);
+      expect(model.busy, isFalse);
+      expect(ble.connection.hasListener, isFalse);
+      expect(states, [true, false]);
+      expect(model.error, contains('Service unavailable'));
+      unawaited(ble.connection.close());
+      unawaited(ble.notifications.close());
+      model.dispose();
+    },
+  );
+
+  test('stop waits for pending service startup before releasing it', () async {
+    final ble = FakeBle();
+    final started = Completer<void>();
+    final states = <bool>[];
+    final model = CaptureModel(
+      ble,
+      null,
+      keepAwake: (enabled) async {
+        states.add(enabled);
+        if (enabled) await started.future;
+      },
+    );
+    final connecting = model.connect(device());
+    await Future<void>.delayed(Duration.zero);
+    final stopping = model.stop();
+    await Future<void>.delayed(Duration.zero);
+    expect(states, [true]);
+    started.complete();
+    await connecting;
+    await stopping;
+    expect(states, [true, false]);
+    expect(model.active, isFalse);
+    expect(ble.connection.hasListener, isFalse);
+    unawaited(ble.connection.close());
+    unawaited(ble.notifications.close());
+    model.dispose();
+  });
+
   test('timed workout finishes automatically, persists goal and stops console once', () {
     fakeAsync((time) {
       final directory = Directory.systemTemp.createTempSync('auto_finish_');
@@ -163,6 +225,10 @@ void main() {
       time.flushMicrotasks();
       unawaited(model.startTraining());
       time.flushMicrotasks();
+      // Locking the screen must not stop sampling or automatic completion.
+      model.lifecycle('inactive');
+      model.lifecycle('hidden');
+      model.lifecycle('paused');
       clock.seconds = 5;
       time.elapse(const Duration(seconds: 1));
       time.flushMicrotasks();

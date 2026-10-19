@@ -6,7 +6,8 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter_reactive_ble/flutter_reactive_ble.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:share_plus/share_plus.dart';
-import 'package:wakelock_plus/wakelock_plus.dart';
+
+import '../data/background_recording.dart';
 
 import '../data/ble_repository.dart';
 import '../data/capture_log.dart';
@@ -26,8 +27,7 @@ class CaptureModel extends ChangeNotifier {
     AppPreferences? preferences,
     this.coach,
   }) : preferences = preferences ?? AppPreferences(null),
-       _keepAwake =
-           keepAwake ?? ((enabled) => WakelockPlus.toggle(enable: enabled));
+       _keepAwake = keepAwake ?? BackgroundRecording.setEnabled;
   final TrainingStore? training;
   final AppPreferences preferences;
   final AudioCoach? coach;
@@ -264,6 +264,7 @@ class CaptureModel extends ChangeNotifier {
   }
 
   final Future<void> Function(bool) _keepAwake;
+  Future<void>? _startingKeepAwake;
   bool _stopping = false;
   final BleRepository ble;
   // Optional developer instrumentation; the installed app does not supply it.
@@ -407,7 +408,8 @@ class CaptureModel extends ChangeNotifier {
       _speedAt = null;
       active = true;
       final generation = ++_generation;
-      await _keepAwake(true);
+      _startingKeepAwake = _keepAwake(true);
+      await _startingKeepAwake;
       if (!active || generation != _generation) return;
       // Identifiers stay in memory. Raw payloads may still contain identifiers.
       _record('advertisement', {
@@ -723,9 +725,15 @@ class CaptureModel extends ChangeNotifier {
     } finally {
       log?.close();
       try {
+        try {
+          await _startingKeepAwake;
+        } catch (_) {
+          // A failed start still needs native cleanup.
+        }
+        _startingKeepAwake = null;
         await _keepAwake(false);
       } catch (_) {
-        error ??= 'No se pudo restaurar el reposo de pantalla.';
+        error ??= 'No se pudo cerrar el servicio de grabación.';
       }
       _stopping = false;
       busy = false;
