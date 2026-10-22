@@ -1,7 +1,7 @@
 // FitShow framing and query identifiers cross-checked against:
 // https://github.com/cagnulein/qdomyos-zwift/blob/master/src/devices/fitshowtreadmill/fitshowtreadmill.h
 // https://github.com/cagnulein/qdomyos-zwift/blob/master/src/devices/fitshowtreadmill/fitshowtreadmill.cpp
-// This is a diagnostic subset, not a confirmed ZROTH initialization sequence.
+// FitShow framing and read-only diagnostic queries.
 enum FitShowQuery {
   status([0x51]),
   workout([0x52, 0x00]),
@@ -44,7 +44,7 @@ bool matchesFitShowQuery(FitShowQuery query, List<int> bytes) {
 class FitShowWorkout {
   const FitShowWorkout(this.elapsedSeconds, this.distanceRaw);
   final int elapsedSeconds;
-  // ZROTH workout counter: meters, reported in increments of 10.
+  // Workout counter: meters, reported in increments of 10.
   final int distanceRaw;
 
   static FitShowWorkout? parse(List<int> bytes) {

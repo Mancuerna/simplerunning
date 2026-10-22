@@ -490,8 +490,8 @@ class CaptureModel extends ChangeNotifier {
           if (c.service.id == Uuid.parse('fff0').expanded &&
               c.id == Uuid.parse('fff2').expanded &&
               (c.isWritableWithResponse || c.isWritableWithoutResponse)) {
-            // The target console advertises only Write Request, although the
-            // reference app successfully uses ATT Write Command on this channel.
+            // Some FitShow consoles accept ATT Write Command even when only
+            // Write Request is advertised. Either property identifies a writer.
             _hasQueryChannel = true;
           }
           final isTrainingChannel =

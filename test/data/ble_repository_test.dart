@@ -28,7 +28,7 @@ class WriteCommandClient implements FlutterReactiveBle {
 
 void main() {
   test(
-    'initialization and stop use the captured ATT Write Command sequence',
+    'initialization and stop use the FitShow ATT Write Command sequence',
     () {
       fakeAsync((time) {
         final client = WriteCommandClient();

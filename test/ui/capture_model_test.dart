@@ -144,7 +144,7 @@ void main() {
   );
 
   for (final (withResponse, withoutResponse) in [
-    (true, false), // Target console: FFF2 advertises only Write Request.
+    (true, false), // FFF2 advertises only Write Request.
     (false, true),
     (true, true),
   ]) {
@@ -202,7 +202,7 @@ void main() {
     );
   }
 
-  test('quiet target console is polled after initialization without unsolicited status', () {
+  test('quiet console is polled after initialization without unsolicited status', () {
     fakeAsync((time) {
       final directory = Directory.systemTemp.createTempSync('quiet_polling_');
       final initialized = Completer<void>();
