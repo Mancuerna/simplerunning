@@ -174,12 +174,14 @@ class CaptureModel extends ChangeNotifier {
     notifyListeners();
   }
 
+  // A quiet console may only send status after initializeFitShow.
+  // Starting must depend on its channels, not an unsolicited first packet.
   bool get canStartTraining =>
       active &&
       !busy &&
       _discovered &&
       _hasQueryChannel &&
-      _receivedFitShowStatus &&
+      _hasStatusChannel &&
       !trainingActive;
 
   Future<void> startTraining() async {
@@ -281,6 +283,7 @@ class CaptureModel extends ChangeNotifier {
   int packets = 0;
   String? _deviceId;
   bool _hasQueryChannel = false;
+  bool _hasStatusChannel = false;
   bool _receivedFitShowStatus = false;
   bool _discovered = false;
   bool querying = false;
@@ -390,6 +393,7 @@ class CaptureModel extends ChangeNotifier {
       packets = 0;
       _deviceId = device.id;
       _hasQueryChannel = false;
+      _hasStatusChannel = false;
       _receivedFitShowStatus = false;
       _discovered = false;
       querying = false;
@@ -481,7 +485,7 @@ class CaptureModel extends ChangeNotifier {
           });
           if (c.service.id == Uuid.parse('fff0').expanded &&
               c.id == Uuid.parse('fff2').expanded &&
-              c.isWritableWithResponse) {
+              c.isWritableWithoutResponse) {
             _hasQueryChannel = true;
           }
           final isTrainingChannel =
@@ -489,6 +493,7 @@ class CaptureModel extends ChangeNotifier {
               c.id == Uuid.parse('fff1').expanded;
           if ((c.isNotifiable || c.isIndicatable) &&
               (log != null || isTrainingChannel)) {
+            if (isTrainingChannel) _hasStatusChannel = true;
             _record('subscribe_requested', context);
             _notifications.add(
               ble
@@ -562,7 +567,14 @@ class CaptureModel extends ChangeNotifier {
       }
       if (current()) {
         _discovered = true;
-        status = 'Cinta conectada · lista para entrenar';
+        if (_hasQueryChannel && _hasStatusChannel) {
+          status = 'Cinta conectada · lista para entrenar';
+        } else {
+          status = 'Cinta conectada · no compatible';
+          error =
+              'La cinta no ofrece los canales FitShow necesarios. '
+              'Prueba a conectar con otra entrada Bluetooth de la cinta.';
+        }
         _record('discovery_complete');
         _startPolling();
       }

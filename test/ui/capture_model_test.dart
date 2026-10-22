@@ -52,12 +52,25 @@ class FakeBle implements BleRepository {
 }
 
 class FakeService implements Service {
+  FakeService({
+    this.notify = true,
+    this.writeWithResponse = true,
+    this.writeWithoutResponse = true,
+  });
+  final bool notify;
+  final bool writeWithResponse;
+  final bool writeWithoutResponse;
   @override
   Uuid get id => Uuid.parse('fff0').expanded;
   @override
   List<Characteristic> get characteristics => [
-    FakeCharacteristic(this, 'fff1', notify: true),
-    FakeCharacteristic(this, 'fff2', writable: true),
+    FakeCharacteristic(this, 'fff1', notify: notify),
+    FakeCharacteristic(
+      this,
+      'fff2',
+      writable: writeWithResponse,
+      writeWithoutResponse: writeWithoutResponse,
+    ),
   ];
   @override
   dynamic noSuchMethod(Invocation invocation) => throw UnimplementedError();
@@ -69,12 +82,14 @@ class FakeCharacteristic implements Characteristic {
     this.shortId, {
     this.notify = false,
     this.writable = false,
+    this.writeWithoutResponse = false,
   });
   @override
   final Service service;
   final String shortId;
   final bool notify;
   final bool writable;
+  final bool writeWithoutResponse;
   @override
   Uuid get id => Uuid.parse(shortId).expanded;
   @override
@@ -86,7 +101,7 @@ class FakeCharacteristic implements Characteristic {
   @override
   bool get isWritableWithResponse => writable;
   @override
-  bool get isWritableWithoutResponse => false;
+  bool get isWritableWithoutResponse => writeWithoutResponse;
   @override
   dynamic noSuchMethod(Invocation invocation) => throw UnimplementedError();
 }
@@ -125,6 +140,88 @@ void main() {
     manufacturerData: Uint8List(0),
     rssi: -50,
   );
+
+  for (final withResponse in [false, true]) {
+    test(
+      'quiet console can start with writeWithResponse=$withResponse',
+      () async {
+        final directory = Directory.systemTemp.createTempSync('quiet_console_');
+        final ble = FakeBle()..writeCompletion.complete();
+        final model = CaptureModel(
+          ble,
+          null,
+          training: TrainingStore(directory),
+          keepAwake: (_) async {},
+        );
+        addTearDown(() async {
+          await model.stop();
+          await ble.connection.close();
+          await ble.notifications.close();
+          model.dispose();
+          directory.deleteSync(recursive: true);
+        });
+        await model.connect(device());
+        expect(model.canStartTraining, isFalse);
+        ble.connection.add(
+          const ConnectionStateUpdate(
+            deviceId: 'synthetic',
+            connectionState: DeviceConnectionState.connected,
+            failure: null,
+          ),
+        );
+        ble.discovered.complete([FakeService(writeWithResponse: withResponse)]);
+        await Future<void>.delayed(Duration.zero);
+        expect(model.packets, 0);
+        expect(model.canStartTraining, isTrue);
+        await model.startTraining();
+        expect(ble.initializations, 1);
+        expect(model.trainingActive, isTrue);
+        expect(model.canStartTraining, isFalse);
+        await model.startTraining();
+        expect(ble.initializations, 1);
+        ble.notifications.add(
+          fitShowFrame([0x51, 3, 60, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]),
+        );
+        await Future<void>.delayed(Duration.zero);
+        expect(model.liveSpeed, 6);
+        expect(model.polling, isTrue);
+        await model.stop();
+        expect(model.canStartTraining, isFalse);
+      },
+    );
+  }
+
+  for (final service in [
+    FakeService(notify: false),
+    FakeService(writeWithoutResponse: false),
+  ]) {
+    test(
+      'missing required FitShow channel explains unavailable start',
+      () async {
+        final ble = FakeBle();
+        final model = CaptureModel(ble, null, keepAwake: (_) async {});
+        await model.connect(device());
+        ble.connection.add(
+          const ConnectionStateUpdate(
+            deviceId: 'synthetic',
+            connectionState: DeviceConnectionState.connected,
+            failure: null,
+          ),
+        );
+        ble.discovered.complete([service]);
+        await Future<void>.delayed(Duration.zero);
+        expect(model.canStartTraining, isFalse);
+        expect(model.status, isNot(contains('lista para entrenar')));
+        expect(model.error, contains('canales FitShow'));
+        await model.startTraining();
+        expect(ble.initializations, 0);
+        await model.stop();
+        unawaited(ble.notifications.close());
+        await ble.connection.close();
+        model.dispose();
+      },
+    );
+  }
 
   test(
     'failed background service cancels connection and releases resources',

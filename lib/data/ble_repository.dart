@@ -20,16 +20,8 @@ class BleRepository {
   }
 
   // Restrict writes to known diagnostic queries on the FitShow channel.
-  Future<void> queryFitShow(String id, FitShowQuery query) => client
-      .writeCharacteristicWithResponse(
-        QualifiedCharacteristic(
-          deviceId: id,
-          serviceId: Uuid.parse('0000fff0-0000-1000-8000-00805f9b34fb'),
-          characteristicId: Uuid.parse('0000fff2-0000-1000-8000-00805f9b34fb'),
-        ),
-        value: query.bytes,
-      )
-      .timeout(const Duration(seconds: 5));
+  Future<void> queryFitShow(String id, FitShowQuery query) =>
+      sendFitShow(id, query.bytes);
 
   // The reference app uses ATT Write Command on this device.
   Future<void> initializeFitShow(String id) async {
