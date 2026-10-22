@@ -23,7 +23,8 @@ class BleRepository {
   Future<void> queryFitShow(String id, FitShowQuery query) =>
       sendFitShow(id, query.bytes);
 
-  // The reference app uses ATT Write Command on this device.
+  // The target advertises only Write Request on FFF2, but the reference
+  // app's captured initialization and polling use ATT Write Command.
   Future<void> initializeFitShow(String id) async {
     // Anonymous session slot, with personal profile fields left unset.
     await sendFitShow(id, fitShowFrame([0x53, 0, 1, 0, 0, 0, 0]));

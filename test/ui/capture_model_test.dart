@@ -18,10 +18,12 @@ class FakeBle implements BleRepository {
     'Unexpected BLE operation: ${invocation.memberName}',
   );
   int initializations = 0;
+  Future<void>? initialization;
   final commands = <List<int>>[];
   @override
   Future<void> initializeFitShow(String id) async {
     initializations++;
+    await initialization;
   }
 
   @override
@@ -55,7 +57,7 @@ class FakeService implements Service {
   FakeService({
     this.notify = true,
     this.writeWithResponse = true,
-    this.writeWithoutResponse = true,
+    this.writeWithoutResponse = false,
   });
   final bool notify;
   final bool writeWithResponse;
@@ -141,9 +143,13 @@ void main() {
     rssi: -50,
   );
 
-  for (final withResponse in [false, true]) {
+  for (final (withResponse, withoutResponse) in [
+    (true, false), // Target console: FFF2 advertises only Write Request.
+    (false, true),
+    (true, true),
+  ]) {
     test(
-      'quiet console can start with writeWithResponse=$withResponse',
+      'quiet console starts with write=$withResponse, command=$withoutResponse',
       () async {
         final directory = Directory.systemTemp.createTempSync('quiet_console_');
         final ble = FakeBle()..writeCompletion.complete();
@@ -169,7 +175,12 @@ void main() {
             failure: null,
           ),
         );
-        ble.discovered.complete([FakeService(writeWithResponse: withResponse)]);
+        ble.discovered.complete([
+          FakeService(
+            writeWithResponse: withResponse,
+            writeWithoutResponse: withoutResponse,
+          ),
+        ]);
         await Future<void>.delayed(Duration.zero);
         expect(model.packets, 0);
         expect(model.canStartTraining, isTrue);
@@ -191,9 +202,77 @@ void main() {
     );
   }
 
+  test('quiet target console is polled after initialization without unsolicited status', () {
+    fakeAsync((time) {
+      final directory = Directory.systemTemp.createTempSync('quiet_polling_');
+      final initialized = Completer<void>();
+      final ble = FakeBle()
+        ..writeCompletion.complete()
+        ..initialization = initialized.future;
+      final model = CaptureModel(
+        ble,
+        null,
+        training: TrainingStore(directory),
+        keepAwake: (_) async {},
+      );
+      unawaited(model.connect(device()));
+      time.flushMicrotasks();
+      ble.connection.add(
+        const ConnectionStateUpdate(
+          deviceId: 'synthetic',
+          connectionState: DeviceConnectionState.connected,
+          failure: null,
+        ),
+      );
+      ble.discovered.complete([FakeService()]);
+      time.flushMicrotasks();
+      time.elapse(const Duration(seconds: 3));
+      expect(ble.writes, isEmpty);
+      expect(model.canStartTraining, isTrue);
+      unawaited(model.startTraining());
+      time.flushMicrotasks();
+      expect(ble.initializations, 1);
+      time.elapse(const Duration(seconds: 3));
+      expect(ble.writes, isEmpty);
+      expect(model.polling, isFalse);
+      expect(model.trainingActive, isFalse);
+      initialized.complete();
+      time.flushMicrotasks();
+      expect(model.trainingActive, isTrue);
+      expect(model.polling, isTrue);
+      expect(model.liveSpeed, isNull);
+      time.elapse(const Duration(seconds: 1));
+      expect(ble.writes, [FitShowQuery.status]);
+      // The console responds only after the app requests its first status.
+      ble.notifications.add(
+        fitShowFrame([0x51, 3, 60, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]),
+      );
+      time.flushMicrotasks();
+      expect(model.liveSpeed, 6);
+      expect(model.matchingReplies, 1);
+      time.elapse(const Duration(seconds: 1));
+      expect(ble.writes.last, FitShowQuery.workout);
+      ble.notifications.add(fitShowFrame([0x52, 0, 0, 0, 100, 0, 0, 0, 0, 0]));
+      time.flushMicrotasks();
+      expect(model.workout!.distanceRaw, 100);
+      unawaited(model.stop());
+      time.flushMicrotasks();
+      final writes = ble.writes.length;
+      time.elapse(const Duration(seconds: 5));
+      expect(ble.writes, hasLength(writes));
+      expect(model.canStartTraining, isFalse);
+      expect(model.polling, isFalse);
+      unawaited(ble.notifications.close());
+      unawaited(ble.connection.close());
+      time.flushMicrotasks();
+      model.dispose();
+      directory.deleteSync(recursive: true);
+    });
+  });
+
   for (final service in [
     FakeService(notify: false),
-    FakeService(writeWithoutResponse: false),
+    FakeService(writeWithResponse: false, writeWithoutResponse: false),
   ]) {
     test(
       'missing required FitShow channel explains unavailable start',

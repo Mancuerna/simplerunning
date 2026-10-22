@@ -81,6 +81,12 @@ sequence and live readings have been checked on the target treadmill. No speed o
 incline targets are sent. Queries alternate workout and status; three consecutive
 write failures pause polling. A matching unsolicited frame does not prove causality.
 
+The target console advertises FFF2 with Write Request but accepts the reference
+app's ATT Write Command sequence. Compatibility therefore accepts either write
+property, together with FFF1 notifications/indications. A quiet console can start
+without an unsolicited status; after initialization the app actively requests
+status, then alternates status/workout queries once a valid status arrives.
+
 Protocol reference:
 [QDomyos-Zwift FitShow implementation](https://github.com/cagnulein/qdomyos-zwift/tree/master/src/devices/fitshowtreadmill).
 The installed app subscribes only to the training channel and does not record raw

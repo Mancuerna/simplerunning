@@ -231,6 +231,9 @@ class CaptureModel extends ChangeNotifier {
       if (active && generation == _generation) await stop();
     } finally {
       busy = false;
+      // Quiet consoles respond to queries; they need not broadcast a status
+      // before polling can start. Initialization has finished at this point.
+      if (generation == _generation) _startPolling();
       notifyListeners();
     }
   }
@@ -310,7 +313,8 @@ class CaptureModel extends ChangeNotifier {
       !querying &&
       _discovered &&
       _hasQueryChannel &&
-      _receivedFitShowStatus;
+      _hasStatusChannel &&
+      (_receivedFitShowStatus || trainingActive);
   int _generation = 0;
   String status = 'Busca la cinta para empezar';
   String? error;
@@ -485,7 +489,9 @@ class CaptureModel extends ChangeNotifier {
           });
           if (c.service.id == Uuid.parse('fff0').expanded &&
               c.id == Uuid.parse('fff2').expanded &&
-              c.isWritableWithoutResponse) {
+              (c.isWritableWithResponse || c.isWritableWithoutResponse)) {
+            // The target console advertises only Write Request, although the
+            // reference app successfully uses ATT Write Command on this channel.
             _hasQueryChannel = true;
           }
           final isTrainingChannel =
@@ -609,7 +615,9 @@ class CaptureModel extends ChangeNotifier {
       FitShowQuery.status,
       FitShowQuery.status,
     ];
-    final query = queries[_pollIndex++ % queries.length];
+    final query = _receivedFitShowStatus
+        ? queries[_pollIndex++ % queries.length]
+        : FitShowQuery.status;
     final id = _deviceId!;
     final generation = _generation;
     bool current() => active && generation == _generation;
