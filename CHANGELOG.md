@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.4.0](https://github.com/Mancuerna/simplerunning/compare/v1.3.5...v1.4.0) (2026-10-22)
+
+
+### Features
+
+* show kilometer splits and collapse training plans ([6ad6043](https://github.com/Mancuerna/simplerunning/commit/6ad60439b0733614eba170a806279fd5d0775a65))
+
 ## [1.3.5](https://github.com/Mancuerna/simplerunning/compare/v1.3.4...v1.3.5) (2026-10-22)
 
 
