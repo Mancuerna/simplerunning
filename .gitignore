@@ -42,3 +42,7 @@ captures/
 *.jks
 *.keystore
 key.properties
+
+# Release tooling outputs
+__pycache__/
+dist/

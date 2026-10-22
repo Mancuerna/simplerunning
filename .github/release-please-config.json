@@ -1,0 +1,19 @@
+{
+  "$schema": "https://raw.githubusercontent.com/googleapis/release-please/main/schemas/config.json",
+  "bootstrap-sha": "87725ae92b8d970c30ca201fabceced13b16df02",
+  "packages": {
+    ".": {
+      "release-type": "dart",
+      "include-component-in-tag": false,
+      "include-v-in-tag": true,
+      "draft": true,
+      "force-tag-creation": true,
+      "changelog-sections": [
+        { "type": "feat", "section": "Features" },
+        { "type": "fix", "section": "Fixes" },
+        { "type": "perf", "section": "Performance" },
+        { "type": "revert", "section": "Reverts" }
+      ]
+    }
+  }
+}

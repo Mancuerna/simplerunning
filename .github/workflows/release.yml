@@ -1,0 +1,101 @@
+name: Release
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing version tag to publish or retry (for example v1.3.4)
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: releases
+  cancel-in-progress: false
+
+jobs:
+  prepare:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: write
+      issues: write
+      pull-requests: write
+      actions: write
+    outputs:
+      created: ${{ steps.please.outputs.release_created }}
+      tag: ${{ steps.please.outputs.tag_name || inputs.tag }}
+    steps:
+      - uses: googleapis/release-please-action@8b8fd2cc23b2e18957157a9d923d75aa0c6f6ad5 # v4
+        id: please
+        if: github.event_name == 'push'
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          config-file: .github/release-please-config.json
+          manifest-file: .github/release-please-manifest.json
+
+      # GITHUB_TOKEN-created PRs do not trigger pull_request workflows.
+      - name: Check the release pull request
+        if: steps.please.outputs.prs_created == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+          RELEASE_BRANCH: ${{ fromJSON(steps.please.outputs.pr || '{}').headBranchName }}
+        run: gh workflow run ci.yml --ref "$RELEASE_BRANCH"
+
+      - name: Validate retry tag
+        if: github.event_name == 'workflow_dispatch'
+        env:
+          RELEASE_TAG: ${{ inputs.tag }}
+        run: |
+          if [[ ! "$RELEASE_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo '::error::Expected an existing stable version tag, for example v1.3.4.'
+            exit 1
+          fi
+
+  build:
+    needs: prepare
+    if: needs.prepare.outputs.created == 'true' || github.event_name == 'workflow_dispatch'
+    uses: ./.github/workflows/release-apk.yml
+    with:
+      ref: refs/tags/${{ needs.prepare.outputs.tag }}
+      release-tag: ${{ needs.prepare.outputs.tag }}
+      signed: true
+    secrets:
+      ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+      ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+      ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+      ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+
+  publish:
+    needs: [prepare, build]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      GH_REPO: ${{ github.repository }}
+      RELEASE_TAG: ${{ needs.prepare.outputs.tag }}
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          name: ${{ needs.build.outputs.artifact-name }}
+          path: dist
+
+      - name: Verify and upload the signed APK
+        working-directory: dist
+        run: |
+          apk="SimpleRunning-${RELEASE_TAG#v}.apk"
+          test -f "$apk"
+          sha256sum --check "$apk.sha256"
+          # Release Please creates the draft. A retry never invents a new release.
+          gh release view "$RELEASE_TAG" >/dev/null
+          gh release upload "$RELEASE_TAG" "$apk" "$apk.sha256" --clobber
+
+      - name: Publish after all checks pass
+        run: gh release edit "$RELEASE_TAG" --draft=false --latest
