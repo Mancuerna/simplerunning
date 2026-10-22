@@ -49,6 +49,12 @@ void main() {
       expect(find.text('Aquí empieza tu historia'), findsOneWidget);
       await tester.tap(find.text('Planes'));
       await tester.pumpAndSettle();
+      expect(find.text('Semana 1'), findsNothing);
+      expect(find.text(runningPlans[0].title), findsOneWidget);
+      expect(find.text(runningPlans[1].title), findsOneWidget);
+      await tester.tap(find.text(runningPlans[0].title));
+      await tester.pumpAndSettle();
+      expect(find.text('Semana 1'), findsOneWidget);
       await Scrollable.ensureVisible(
         tester.element(find.text('Semana 1').first),
         alignment: .3,

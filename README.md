@@ -14,6 +14,7 @@ intervals, and guided plans. No account, ads, or analytics.
 - Train freely or set up running and recovery intervals.
 - Follow progressive plans with voice cues and vibration alerts.
 - Track speed, distance, and time over Bluetooth.
+- See kilometer splits, your fastest kilometer, and average pace.
 - Review your history and progress, and export your workouts.
 
 Workouts are stored on your device. Install the APK, connect a compatible

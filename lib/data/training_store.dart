@@ -4,6 +4,7 @@ import 'dart:io';
 import 'package:path/path.dart' as p;
 
 import '../domain/workout.dart';
+import '../domain/kilometer_splits.dart';
 import 'capture_log.dart';
 
 class TrainingSession {
@@ -30,6 +31,7 @@ class TrainingSession {
   double get meters =>
       samples.isEmpty ? 0 : (samples.last['meters'] as num).toDouble();
   double get averageKmh => seconds == 0 ? 0 : meters / seconds * 3.6;
+  KilometerSplits get kilometerSplits => KilometerSplits.fromSamples(samples);
   double get peakKmh => samples.fold(0, (peak, sample) {
     final speed = (sample['speed_kmh'] as num?)?.toDouble() ?? 0;
     return speed > peak ? speed : peak;
@@ -79,6 +81,7 @@ class TrainingStore {
   bool get paused => recording && !_clock.isRunning;
   int get seconds => _clock.elapsed.inSeconds;
   double meters = 0;
+  KilometerSplits kilometerSplits = KilometerSplits();
   int? _lastDistance;
   Map<String, Object?> _phase = {};
 
@@ -90,6 +93,7 @@ class TrainingStore {
       'recipe': recipe.toJson(),
     });
     meters = 0;
+    kilometerSplits = KilometerSplits();
     _lastDistance = distance;
     _phase = {};
     _recording = true;
@@ -143,12 +147,14 @@ class TrainingStore {
 
   void sample(double? speed) {
     if (!recording || paused) return;
+    final elapsed = seconds;
     _log.add('sample', {
-      'seconds': seconds,
+      'seconds': elapsed,
       'meters': meters,
       'speed_kmh': speed,
       ..._phase,
     });
+    kilometerSplits.add(elapsed.toDouble(), meters);
   }
 
   void finish({required bool complete, bool goalReached = false}) {

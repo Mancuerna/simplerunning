@@ -483,6 +483,7 @@ class _CaptureScreenState extends State<CaptureScreen>
         ),
       ),
       TrainingMetrics(speed: model.liveSpeed, seconds: seconds, meters: meters),
+      const PaceHelp(),
       if (!model.speedFresh)
         const Padding(
           padding: EdgeInsets.all(8),
@@ -523,6 +524,15 @@ class _CaptureScreenState extends State<CaptureScreen>
             ),
           ],
         ),
+      if (seconds > 0)
+        Padding(
+          padding: const EdgeInsets.symmetric(vertical: 12),
+          child: Text(
+            'Media de la sesión: ${paceLabel(meters / seconds * 3.6)} min/km · ${(meters / seconds * 3.6).toStringAsFixed(1)} km/h',
+          ),
+        ),
+      if (model.training != null)
+        KilometerBreakdown(splits: model.training!.kilometerSplits, live: true),
       const Padding(
         padding: EdgeInsets.only(top: 12),
         child: Text(
@@ -589,91 +599,92 @@ class _CaptureScreenState extends State<CaptureScreen>
       ),
       for (final plan in runningPlans)
         Card(
-          child: Padding(
-            padding: const EdgeInsets.all(20),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  plan.id == '5k' ? 'EMPIEZA AQUÍ' : 'SIGUE CRECIENDO',
-                  style: const TextStyle(
-                    color: lime,
-                    fontSize: 11,
-                    letterSpacing: 2,
-                    fontWeight: FontWeight.w700,
-                  ),
-                ),
-                const SizedBox(height: 10),
-                Text(
-                  plan.title,
-                  style: const TextStyle(
-                    fontSize: 28,
-                    fontWeight: FontWeight.w800,
-                  ),
-                ),
-                const SizedBox(height: 12),
-                Text(
-                  plan.description,
-                  style: const TextStyle(color: muted, height: 1.5),
-                ),
-                const SizedBox(height: 20),
-                LinearProgressIndicator(
-                  value:
-                      plan.sessions
-                          .where((s) => completed.contains(s.id))
-                          .length /
-                      plan.sessions.length,
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                const SizedBox(height: 8),
-                Text(
-                  '${plan.sessions.where((s) => completed.contains(s.id)).length} de ${plan.sessions.length} sesiones completadas',
-                  style: const TextStyle(color: muted),
-                ),
-                const SizedBox(height: 14),
-                FilledButton.icon(
-                  onPressed: () => _preview(
-                    plan.sessions.firstWhere(
-                      (s) => !completed.contains(s.id),
-                      orElse: () => plan.sessions.first,
-                    ),
-                  ),
-                  icon: const Icon(Icons.play_arrow),
-                  label: Text(
-                    plan.sessions.every((s) => completed.contains(s.id))
-                        ? 'Volver a empezar'
-                        : 'Ver siguiente sesión',
-                  ),
-                ),
-                for (var w = 0; w < plan.weeks.length; w++)
-                  ExpansionTile(
-                    tilePadding: EdgeInsets.zero,
-                    title: Text('Semana ${w + 1}'),
-                    subtitle: Text(
-                      '${plan.weeks[w].where((s) => completed.contains(s.id)).length}/3 completadas',
-                      style: const TextStyle(color: muted, fontSize: 12),
-                    ),
-                    children: [
-                      for (var d = 0; d < plan.weeks[w].length; d++)
-                        ListTile(
-                          contentPadding: EdgeInsets.zero,
-                          leading: Icon(
-                            completed.contains(plan.weeks[w][d].id)
-                                ? Icons.check_circle
-                                : Icons.play_circle_outline,
-                            color: completed.contains(plan.weeks[w][d].id)
-                                ? lime
-                                : muted,
-                          ),
-                          title: Text('Día ${d + 1}'),
-                          subtitle: Text(_recipeDuration(plan.weeks[w][d])),
-                          trailing: const Icon(Icons.chevron_right),
-                          onTap: () => _preview(plan.weeks[w][d]),
-                        ),
-                    ],
-                  ),
-              ],
+          child: ExpansionTile(
+            key: PageStorageKey('plan-${plan.id}'),
+            initiallyExpanded: false,
+            tilePadding: const EdgeInsets.symmetric(
+              horizontal: 20,
+              vertical: 8,
             ),
+            title: Text(
+              plan.title,
+              style: const TextStyle(fontSize: 22, fontWeight: FontWeight.w800),
+            ),
+            subtitle: Text(
+              '${plan.sessions.where((s) => completed.contains(s.id)).length} de ${plan.sessions.length} sesiones completadas',
+              style: const TextStyle(color: muted),
+            ),
+            children: [
+              Padding(
+                padding: const EdgeInsets.all(20),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      plan.description,
+                      style: const TextStyle(color: muted, height: 1.5),
+                    ),
+                    const SizedBox(height: 20),
+                    LinearProgressIndicator(
+                      value:
+                          plan.sessions
+                              .where((s) => completed.contains(s.id))
+                              .length /
+                          plan.sessions.length,
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      '${plan.sessions.where((s) => completed.contains(s.id)).length} de ${plan.sessions.length} sesiones completadas',
+                      style: const TextStyle(color: muted),
+                    ),
+                    const SizedBox(height: 14),
+                    FilledButton.icon(
+                      onPressed: () => _preview(
+                        plan.sessions.firstWhere(
+                          (s) => !completed.contains(s.id),
+                          orElse: () => plan.sessions.first,
+                        ),
+                      ),
+                      icon: const Icon(Icons.play_arrow),
+                      label: Text(
+                        plan.sessions.every((s) => completed.contains(s.id))
+                            ? 'Volver a empezar'
+                            : 'Ver siguiente sesión',
+                      ),
+                    ),
+                    for (var w = 0; w < plan.weeks.length; w++)
+                      ExpansionTile(
+                        key: PageStorageKey('plan-${plan.id}-week-$w'),
+                        tilePadding: EdgeInsets.zero,
+                        title: Text('Semana ${w + 1}'),
+                        subtitle: Text(
+                          '${plan.weeks[w].where((s) => completed.contains(s.id)).length}/3 completadas',
+                          style: const TextStyle(color: muted, fontSize: 12),
+                        ),
+                        children: [
+                          for (var d = 0; d < plan.weeks[w].length; d++)
+                            ListTile(
+                              contentPadding: EdgeInsets.zero,
+                              leading: Icon(
+                                completed.contains(plan.weeks[w][d].id)
+                                    ? Icons.check_circle
+                                    : Icons.play_circle_outline,
+                                color: completed.contains(plan.weeks[w][d].id)
+                                    ? lime
+                                    : muted,
+                              ),
+                              title: Text('Día ${d + 1}'),
+                              subtitle: Text(_recipeDuration(plan.weeks[w][d])),
+                              trailing: const Icon(Icons.chevron_right),
+                              onTap: () => _preview(plan.weeks[w][d]),
+                            ),
+                        ],
+                      ),
+                  ],
+                ),
+              ),
+            ],
           ),
         ),
       const Padding(
@@ -889,7 +900,9 @@ class _CaptureScreenState extends State<CaptureScreen>
         speed: stats.averageKmh,
         seconds: stats.seconds,
         meters: stats.meters,
+        average: true,
       ),
+      const PaceHelp(),
       Text(
         '${model.history.length} ${model.history.length == 1 ? 'sesión' : 'sesiones'} · salida más larga: ${(stats.longestMeters / 1000).toStringAsFixed(2)} km',
         style: const TextStyle(color: muted),

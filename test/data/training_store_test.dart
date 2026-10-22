@@ -1,6 +1,8 @@
 import 'dart:io';
 import 'dart:convert';
 
+import '../ui/capture_model_test.dart' show ManualStopwatch;
+
 import 'package:simplerunning/domain/workout.dart';
 
 import 'package:flutter_test/flutter_test.dart';
@@ -8,6 +10,35 @@ import 'package:simplerunning/data/training_store.dart';
 import 'package:simplerunning/data/fitshow_diagnostics.dart';
 
 void main() {
+  test('live splits match saved splits and reset for the next session', () {
+    final dir = Directory.systemTemp.createTempSync('split_store_');
+    addTearDown(() => dir.deleteSync(recursive: true));
+    final clock = ManualStopwatch();
+    final store = TrainingStore(dir, clock: clock)..start(0);
+    for (var seconds = 5; seconds <= 600; seconds += 5) {
+      clock.seconds = seconds;
+      store.distance(seconds * 2);
+      store.sample(7.2);
+      if (seconds == 300) {
+        store.pause();
+        store.distance(9000);
+        store.resume();
+        store.distance(seconds * 2);
+      }
+    }
+    store.finish(complete: true);
+    final saved = store.load().single.kilometerSplits;
+    expect(store.kilometerSplits.fastest!.seconds, 500);
+    expect(saved.fastest!.seconds, store.kilometerSplits.fastest!.seconds);
+    expect(saved.partial!.meters, 200);
+    expect(saved.partial!.seconds, 100);
+    expect(saved.hasGaps, isFalse);
+    store.start(1200);
+    expect(store.kilometerSplits.completed, isEmpty);
+    expect(store.kilometerSplits.partial, isNull);
+    store.finish(complete: true);
+  });
+
   test('pause excludes movement and resume establishes a fresh baseline', () {
     final dir = Directory.systemTemp.createTempSync('pause_store_');
     addTearDown(() => dir.deleteSync(recursive: true));

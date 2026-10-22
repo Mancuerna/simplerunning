@@ -1,12 +1,15 @@
 import 'package:flutter/material.dart';
 
 import '../data/training_store.dart';
+import '../domain/kilometer_splits.dart';
 import 'app_theme.dart';
 
 String durationLabel(int seconds) =>
     '${seconds ~/ 60}:${(seconds % 60).toString().padLeft(2, '0')}';
 String paceLabel(double? speed) =>
-    speed == null || speed <= 0 ? '—' : durationLabel((3600 / speed).round());
+    speed == null || !speed.isFinite || speed <= 0
+    ? '—'
+    : durationLabel((3600 / speed).round());
 String dateLabel(DateTime date) {
   final d = date.toLocal();
   return '${d.day}/${d.month}/${d.year} · ${d.hour}:${d.minute.toString().padLeft(2, '0')}';
@@ -18,10 +21,12 @@ class TrainingMetrics extends StatelessWidget {
     required this.speed,
     required this.seconds,
     required this.meters,
+    this.average = false,
   });
   final double? speed;
   final int seconds;
   final double meters;
+  final bool average;
   @override
   Widget build(BuildContext context) => Card(
     child: Padding(
@@ -32,8 +37,14 @@ class TrainingMetrics extends StatelessWidget {
           runSpacing: 24,
           children: [
             for (final metric in [
-              (speed?.toStringAsFixed(1) ?? '—', 'KM/H'),
-              (paceLabel(speed), 'MIN/KM'),
+              (
+                speed?.toStringAsFixed(1) ?? '—',
+                average ? 'VELOCIDAD MEDIA · KM/H' : 'VELOCIDAD ACTUAL · KM/H',
+              ),
+              (
+                paceLabel(speed),
+                average ? 'RITMO MEDIO · MIN/KM' : 'RITMO ACTUAL · MIN/KM',
+              ),
               (durationLabel(seconds), 'TIEMPO ACTIVO'),
               ((meters / 1000).toStringAsFixed(2), 'KILÓMETROS'),
             ])
@@ -69,6 +80,181 @@ class TrainingMetrics extends StatelessWidget {
       ),
     ),
   );
+}
+
+class PaceHelp extends StatelessWidget {
+  const PaceHelp({super.key});
+
+  @override
+  Widget build(BuildContext context) => Align(
+    alignment: Alignment.centerLeft,
+    child: TextButton.icon(
+      icon: const Icon(Icons.help_outline, size: 18),
+      label: const Text('¿Qué significa min/km?'),
+      onPressed: () => showModalBottomSheet<void>(
+        context: context,
+        showDragHandle: true,
+        isScrollControlled: true,
+        builder: (context) => const SafeArea(
+          child: SingleChildScrollView(
+            padding: EdgeInsets.all(24),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  'Ritmo: tiempo por kilómetro',
+                  style: TextStyle(fontSize: 24, fontWeight: FontWeight.w700),
+                ),
+                SizedBox(height: 16),
+                Text(
+                  '6:00 min/km significa que tardas 6 minutos en recorrer 1 km. Cuanto menor es el tiempo, más rápido corres.',
+                ),
+                SizedBox(height: 16),
+                Text(
+                  '5:00 min/km = 12 km/h\n6:00 min/km = 10 km/h\n7:30 min/km = 8 km/h',
+                ),
+                SizedBox(height: 16),
+                Text(
+                  'El ritmo actual refleja la velocidad de la cinta ahora. El ritmo medio usa la distancia y el tiempo activo de toda la sesión, incluidas las recuperaciones y sin las pausas manuales.',
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    ),
+  );
+}
+
+class KilometerBreakdown extends StatelessWidget {
+  const KilometerBreakdown({
+    super.key,
+    required this.splits,
+    this.live = false,
+  });
+  final KilometerSplits splits;
+  final bool live;
+
+  @override
+  Widget build(BuildContext context) {
+    final best = splits.fastest;
+    final rows = [
+      ...splits.completed,
+      if (splits.partial != null) splits.partial!,
+    ];
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        SectionHeading(
+          'Kilómetro a kilómetro',
+          subtitle: live
+              ? 'Parciales de esta sesión'
+              : 'Tiempo, ritmo y velocidad de cada parcial',
+        ),
+        if (live) ...[
+          Text(
+            'Kilómetro ${splits.currentNumber} en curso',
+            style: const TextStyle(color: lime, fontWeight: FontWeight.w700),
+          ),
+          const SizedBox(height: 8),
+          LinearProgressIndicator(
+            value: (splits.currentMeters / 1000).clamp(0, 1),
+            borderRadius: BorderRadius.circular(8),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            '${splits.currentMeters.round()} / 1000 m · ${durationLabel(splits.currentSeconds.round())}',
+          ),
+        ],
+        if (best != null)
+          Card(
+            child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text(
+                    'Kilómetro más rápido',
+                    style: TextStyle(color: lime, fontWeight: FontWeight.w700),
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    'Km ${best.number} · ${paceLabel(best.speedKmh)} min/km · ${best.speedKmh!.toStringAsFixed(1)} km/h',
+                  ),
+                  const Text(
+                    'Mejor parcial completo de 1 km',
+                    style: TextStyle(color: muted, fontSize: 12),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        if (splits.completed.isEmpty)
+          const Padding(
+            padding: EdgeInsets.symmetric(vertical: 12),
+            child: Text(
+              'Al completar 1 km aparecerá tu primer parcial y tu kilómetro más rápido.',
+              style: TextStyle(color: muted),
+            ),
+          ),
+        if (rows.isNotEmpty)
+          SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            child: DataTable(
+              dataRowMinHeight: 64,
+              dataRowMaxHeight: 64 * MediaQuery.textScalerOf(context).scale(1),
+              horizontalMargin: 8,
+              columnSpacing: 18,
+              columns: const [
+                DataColumn(label: Text('Km')),
+                DataColumn(label: Text('Tiempo')),
+                DataColumn(label: Text('min/km')),
+                DataColumn(label: Text('km/h')),
+              ],
+              rows: [
+                for (final split in rows)
+                  DataRow(
+                    color: split == best
+                        ? const WidgetStatePropertyAll(Color(0xFF283C2E))
+                        : null,
+                    cells: [
+                      DataCell(
+                        Text(
+                          split.complete
+                              ? '${split.number}'
+                              : '${split.number} · parcial\n${(split.meters / 1000).toStringAsFixed(2)} km',
+                        ),
+                      ),
+                      DataCell(
+                        Text(
+                          split.reliable
+                              ? durationLabel(split.seconds.round())
+                              : '—',
+                        ),
+                      ),
+                      DataCell(Text(paceLabel(split.speedKmh))),
+                      DataCell(Text(split.speedKmh?.toStringAsFixed(1) ?? '—')),
+                    ],
+                  ),
+              ],
+            ),
+          ),
+        const Padding(
+          padding: EdgeInsets.symmetric(vertical: 12),
+          child: Text(
+            'Parciales estimados con los datos de distancia de la cinta. Incluyen recuperaciones y excluyen pausas manuales. El tramo final incompleto no cuenta como mejor kilómetro.',
+            style: TextStyle(color: muted, fontSize: 12),
+          ),
+        ),
+        if (splits.hasGaps)
+          const Text(
+            'Hay tramos sin muestras suficientes. No se usan para elegir el kilómetro más rápido.',
+            style: TextStyle(color: Colors.orangeAccent),
+          ),
+      ],
+    );
+  }
 }
 
 class TrainingDetail extends StatelessWidget {
@@ -126,10 +312,14 @@ class TrainingDetail extends StatelessWidget {
           speed: session.averageKmh,
           seconds: session.seconds,
           meters: session.meters,
+          average: true,
         ),
+        const PaceHelp(),
         const Text(
           'Velocidad y ritmo medios sobre el tiempo activo, incluidas recuperaciones y excluidas pausas manuales.',
         ),
+        const SizedBox(height: 24),
+        KilometerBreakdown(splits: session.kilometerSplits),
         const SizedBox(height: 24),
         Text(
           'Velocidad durante la sesión',
