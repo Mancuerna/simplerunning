@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.5.0](https://github.com/Mancuerna/simplerunning/compare/v1.4.0...v1.5.0) (2026-11-02)
+
+
+### Features
+
+* remember treadmill and connect automatically on startup ([715235c](https://github.com/Mancuerna/simplerunning/commit/715235c3a0049f4906589903d64dc64a024f2a0e))
+
 ## [1.4.0](https://github.com/Mancuerna/simplerunning/compare/v1.3.5...v1.4.0) (2026-10-22)
 
 
