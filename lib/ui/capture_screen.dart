@@ -22,6 +22,9 @@ class _CaptureScreenState extends State<CaptureScreen>
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) model.restoreConnection();
+    });
   }
 
   @override
@@ -949,6 +952,18 @@ class _CaptureScreenState extends State<CaptureScreen>
               padding: const EdgeInsets.all(20),
               children: [
                 const SectionHeading('A tu manera'),
+                if (model.preferences.treadmillId != null)
+                  ListTile(
+                    contentPadding: EdgeInsets.zero,
+                    title: Text(model.preferences.treadmillName),
+                    subtitle: const Text(
+                      'Se conecta automáticamente al abrir la app.',
+                    ),
+                    trailing: TextButton(
+                      onPressed: model.busy ? null : model.forgetTreadmill,
+                      child: const Text('Olvidar'),
+                    ),
+                  ),
                 SwitchListTile(
                   contentPadding: EdgeInsets.zero,
                   title: const Text('Avisos de voz'),

@@ -1,10 +1,8 @@
 import 'dart:async';
 import 'dart:io';
 
-import 'package:device_info_plus/device_info_plus.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_reactive_ble/flutter_reactive_ble.dart';
-import 'package:permission_handler/permission_handler.dart';
 import 'package:share_plus/share_plus.dart';
 
 import '../data/background_recording.dart';
@@ -318,61 +316,90 @@ class CaptureModel extends ChangeNotifier {
   int _generation = 0;
   String status = 'Busca la cinta para empezar';
   String? error;
+  bool _restoredConnection = false;
+  bool _disposed = false;
+  int _scanGeneration = 0;
+  String? _autoConnectId;
 
-  Future<void> scan() async {
-    if (busy || active || scanning || _stopping) return;
+  Future<void> restoreConnection() async {
+    if (_restoredConnection || _disposed) return;
+    _restoredConnection = true;
+    if (preferences.treadmillId != null) await scan(autoConnect: true);
+  }
+
+  Future<void> forgetTreadmill() async {
+    if (busy || _disposed) return;
+    await stopScan();
+    try {
+      preferences.set('treadmill', null);
+    } catch (_) {
+      error = 'No se pudo olvidar la cinta.';
+    }
+    notifyListeners();
+  }
+
+  Future<void> scan({bool autoConnect = false}) async {
+    if (busy || active || scanning || _stopping || _disposed) return;
+    final generation = ++_scanGeneration;
+    _autoConnectId = autoConnect ? preferences.treadmillId : null;
     busy = true;
     error = null;
+    status = 'Preparando Bluetooth…';
     notifyListeners();
     try {
-      final sdk = (await DeviceInfoPlugin().androidInfo).version.sdkInt;
-      final permissions =
-          await (sdk >= 31
-                  ? [Permission.bluetoothScan, Permission.bluetoothConnect]
-                  : [Permission.locationWhenInUse])
-              .request();
-      if (permissions.values.any((p) => !p.isGranted)) {
-        throw StateError(
-          'Concede los permisos Bluetooth en los ajustes de la app.',
-        );
-      }
-      if (ble.client.status != BleStatus.ready) {
-        await ble.client.statusStream
-            .firstWhere((s) => s == BleStatus.ready)
-            .timeout(const Duration(seconds: 5));
-      }
+      await ble.prepareScan();
+      if (generation != _scanGeneration || _disposed) return;
       _devices.clear();
       scanning = true;
-      status = 'Buscando durante 15 segundos…';
+      status = _autoConnectId == null
+          ? 'Buscando durante 15 segundos…'
+          : 'Buscando ${preferences.treadmillName} para conectar…';
       _scan = ble.scan().listen(
         (device) {
+          if (generation != _scanGeneration || !scanning || _disposed) return;
           _devices[device.id] = device;
+          if (device.id == _autoConnectId) {
+            _autoConnectId = null;
+            unawaited(connect(device));
+            return;
+          }
           notifyListeners();
         },
         onError: (Object e) {
+          if (generation != _scanGeneration || _disposed) return;
           error = 'No se pudo buscar. Comprueba Bluetooth y ubicación: $e';
           unawaited(stopScan());
         },
       );
       _scanTimer = Timer(
         const Duration(seconds: 15),
-        () => unawaited(stopScan()),
+        () => unawaited(stopScan(timedOut: true)),
       );
     } catch (e) {
+      if (generation != _scanGeneration || _disposed) return;
       error =
           'No se pudo buscar. Comprueba Bluetooth, permisos y ubicación: $e';
+      await stopScan();
     } finally {
       busy = false;
       notifyListeners();
     }
   }
 
-  Future<void> stopScan() async {
+  Future<void> stopScan({bool timedOut = false}) async {
+    final missedSavedDevice = timedOut && _autoConnectId != null;
+    _scanGeneration++;
+    _autoConnectId = null;
     _scanTimer?.cancel();
-    await _scan?.cancel();
+    final scan = _scan;
     _scan = null;
     scanning = false;
-    if (!active) status = 'Selecciona la cinta o vuelve a buscar';
+    await scan?.cancel();
+    if (!active) {
+      status = missedSavedDevice
+          ? 'No se encontró tu cinta. Enciéndela y vuelve a buscar.'
+          : 'Selecciona la cinta o vuelve a buscar';
+    }
     notifyListeners();
   }
 
@@ -387,12 +414,13 @@ class CaptureModel extends ChangeNotifier {
   }
 
   Future<void> connect(DiscoveredDevice device) async {
-    if (active || busy || _stopping) return;
+    if (active || busy || _stopping || _disposed) return;
     busy = true;
     error = null;
     notifyListeners();
     try {
       await stopScan();
+      if (_disposed) return;
       log?.start();
       packets = 0;
       _deviceId = device.id;
@@ -419,7 +447,7 @@ class CaptureModel extends ChangeNotifier {
       _startingKeepAwake = _keepAwake(true);
       await _startingKeepAwake;
       if (!active || generation != _generation) return;
-      // Identifiers stay in memory. Raw payloads may still contain identifiers.
+      // Device identifiers are excluded from diagnostic captures.
       _record('advertisement', {
         'rssi': device.rssi,
         'services': device.serviceUuids.map((s) => s.toString()).toList(),
@@ -438,7 +466,7 @@ class CaptureModel extends ChangeNotifier {
               _record('connection', {'state': update.connectionState.name});
               if (update.connectionState == DeviceConnectionState.connected) {
                 status = 'Descubriendo servicios…';
-                unawaited(_discover(device.id, generation));
+                unawaited(_discover(device, generation));
               } else if (update.connectionState ==
                   DeviceConnectionState.disconnected) {
                 error = 'La cinta se ha desconectado. El entrenamiento queda guardado.';
@@ -464,7 +492,8 @@ class CaptureModel extends ChangeNotifier {
   static String _hex(List<int> bytes) =>
       bytes.map((v) => v.toRadixString(16).padLeft(2, '0')).join();
 
-  Future<void> _discover(String id, int generation) async {
+  Future<void> _discover(DiscoveredDevice device, int generation) async {
+    final id = device.id;
     bool current() => active && generation == _generation;
     try {
       final services = await ble
@@ -575,6 +604,12 @@ class CaptureModel extends ChangeNotifier {
         _discovered = true;
         if (_hasQueryChannel && _hasStatusChannel) {
           status = 'Cinta conectada · lista para entrenar';
+          try {
+            preferences.set('treadmill', {'id': id, 'name': device.name});
+          } catch (_) {
+            error =
+                'Cinta conectada, pero no se pudo guardar para la próxima vez.';
+          }
         } else {
           status = 'Cinta conectada · no compatible';
           error =
@@ -771,5 +806,18 @@ class CaptureModel extends ChangeNotifier {
       error = 'No se pudo compartir: $e';
       notifyListeners();
     }
+  }
+
+  @override
+  void notifyListeners() {
+    if (!_disposed) super.notifyListeners();
+  }
+
+  @override
+  void dispose() {
+    _disposed = true;
+    unawaited(stopScan());
+    unawaited(stop());
+    super.dispose();
   }
 }

@@ -1,10 +1,31 @@
 import 'package:flutter_reactive_ble/flutter_reactive_ble.dart';
+import 'package:device_info_plus/device_info_plus.dart';
+import 'package:permission_handler/permission_handler.dart';
 
 import 'fitshow_diagnostics.dart';
 
 class BleRepository {
   BleRepository(this.client);
   final FlutterReactiveBle client;
+
+  Future<void> prepareScan() async {
+    final sdk = (await DeviceInfoPlugin().androidInfo).version.sdkInt;
+    final permissions =
+        await (sdk >= 31
+                ? [Permission.bluetoothScan, Permission.bluetoothConnect]
+                : [Permission.locationWhenInUse])
+            .request();
+    if (permissions.values.any((p) => !p.isGranted)) {
+      throw StateError(
+        'Concede los permisos Bluetooth en los ajustes de la app.',
+      );
+    }
+    if (client.status != BleStatus.ready) {
+      await client.statusStream
+          .firstWhere((s) => s == BleStatus.ready)
+          .timeout(const Duration(seconds: 5));
+    }
+  }
 
   Stream<DiscoveredDevice> scan() =>
       client.scanForDevices(withServices: [], scanMode: ScanMode.lowLatency);
