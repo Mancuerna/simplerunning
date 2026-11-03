@@ -2,7 +2,7 @@ name: simplerunning
 description: "Offline treadmill training, intervals and running plans."
 publish_to: 'none' # Remove this line if you wish to publish to pub.dev
 
-version: 1.5.0+15
+version: 1.5.1+16
 
 environment:
   sdk: ^3.13.4

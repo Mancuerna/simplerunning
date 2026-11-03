@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.5.1](https://github.com/Mancuerna/simplerunning/compare/v1.5.0...v1.5.1) (2026-11-03)
+
+
+### Fixes
+
+* filter Bluetooth scan noise and prioritize treadmills ([9f413d1](https://github.com/Mancuerna/simplerunning/commit/9f413d1bb0e479c68af3a018c445f33dd81e6680))
+
 ## [1.5.0](https://github.com/Mancuerna/simplerunning/compare/v1.4.0...v1.5.0) (2026-11-02)
 
 
