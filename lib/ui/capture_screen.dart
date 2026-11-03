@@ -359,6 +359,21 @@ class _CaptureScreenState extends State<CaptureScreen>
                 padding: EdgeInsets.only(top: 12),
                 child: LinearProgressIndicator(),
               ),
+            if (model.hiddenDeviceCount > 0) ...[
+              if (model.devices.isEmpty)
+                const Text(
+                  'Todavía no aparece ninguna cinta. Si no se reconoce la tuya, prueba «Mostrar todos».',
+                  style: TextStyle(color: muted, fontSize: 12),
+                ),
+              TextButton(
+                onPressed: () => model.setShowAllDevices(!model.showAllDevices),
+                child: Text(
+                  model.showAllDevices
+                      ? 'Mostrar solo cintas'
+                      : 'Mostrar todos (${model.hiddenDeviceCount} más)',
+                ),
+              ),
+            ],
             for (final device in model.devices)
               ListTile(
                 contentPadding: EdgeInsets.zero,

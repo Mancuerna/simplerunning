@@ -79,6 +79,109 @@ void main() {
   });
 
   test(
+    'crowded scans hide unrelated devices and keep the saved treadmill first',
+    () async {
+      await model.scan();
+      for (var index = 0; index < 100; index++) {
+        ble.advertisements.add(device('nearby-$index', 'Nearby device $index'));
+      }
+      ble.advertisements.add(
+        device(
+          'fitshow',
+          'Console',
+        ).copyWith(serviceUuids: [Uuid.parse('fff0').expanded]),
+      );
+      ble.advertisements.add(
+        device('ftms', '').copyWith(serviceUuids: [Uuid.parse('1826')]),
+      );
+      ble.advertisements.add(device('saved', ''));
+      await settle();
+      expect(model.devices.map((d) => d.id), ['saved', 'fitshow', 'ftms']);
+      expect(model.hiddenDeviceCount, 100);
+      expect(ble.connectedIds, isEmpty);
+      model.setShowAllDevices(true);
+      expect(model.devices, hasLength(103));
+      expect(model.devices.first.id, 'saved');
+      expect(model.devices[1].id, 'fitshow');
+      model.setShowAllDevices(false);
+      expect(model.devices, hasLength(3));
+    },
+  );
+
+  test(
+    'service data and console names identify candidates without service UUIDs',
+    () async {
+      await model.scan();
+      ble.advertisements.add(device('tf', 'TF-TEST'));
+      ble.advertisements.add(device('named', 'FitShow console'));
+      ble.advertisements.add(
+        device(
+          'data',
+          '',
+        ).copyWith(serviceData: {Uuid.parse('fff0').expanded: Uint8List(0)}),
+      );
+      ble.advertisements.add(device('headphones', 'Headphones'));
+      await settle();
+      expect(model.devices.map((d) => d.id), ['tf', 'named', 'data']);
+    },
+  );
+
+  test(
+    'partial advertisements preserve the treadmill name and services',
+    () async {
+      await model.scan();
+      ble.advertisements.add(
+        device(
+          'console',
+          'My console',
+        ).copyWith(serviceUuids: [Uuid.parse('fff0').expanded]),
+      );
+      ble.advertisements.add(device('console', '').copyWith(rssi: -70));
+      await settle();
+      expect(model.devices.single.name, 'My console');
+      expect(model.devices.single.serviceUuids, [Uuid.parse('fff0').expanded]);
+      expect(model.devices.single.rssi, -70);
+      expect(model.hiddenDeviceCount, 0);
+      model.setShowAllDevices(true);
+      await model.stopScan();
+      await model.scan();
+      expect(model.devices, isEmpty);
+      expect(model.showAllDevices, isFalse);
+    },
+  );
+
+  testWidgets(
+    'scan list filters noise and allows selecting an unrecognized treadmill',
+    (tester) async {
+      await tester.runAsync(() async {
+        await model.restoreConnection();
+        ble.advertisements.add(device('console', 'TF-TEST'));
+        ble.advertisements.add(device('unknown', 'Other console'));
+        await settle();
+        await model.stopScan();
+      });
+      await tester.pumpWidget(MaterialApp(home: CaptureScreen(model: model)));
+      await tester.scrollUntilVisible(find.text('TF-TEST'), 250);
+      await tester.pumpAndSettle();
+      expect(find.text('Other console'), findsNothing);
+      await tester.ensureVisible(find.text('Mostrar todos (1 más)'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Mostrar todos (1 más)'));
+      await tester.pumpAndSettle();
+      await tester.scrollUntilVisible(find.text('Other console'), 150);
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Other console'));
+      await tester.runAsync(settle);
+      await tester.pumpAndSettle();
+      expect(ble.connectedIds, ['unknown']);
+      expect(tester.takeException(), isNull);
+      unawaited(model.stop());
+      await tester.runAsync(settle);
+      await tester.pumpAndSettle();
+    },
+  );
+
+  test(
     'first launch and invalid saved devices do not request Bluetooth',
     () async {
       for (final saved in [

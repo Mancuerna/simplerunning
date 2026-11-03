@@ -273,7 +273,40 @@ class CaptureModel extends ChangeNotifier {
   // Optional developer instrumentation; the installed app does not supply it.
   final CaptureLog? log;
   final Map<String, DiscoveredDevice> _devices = {};
-  List<DiscoveredDevice> get devices => List.unmodifiable(_devices.values);
+  bool _showAllDevices = false;
+  bool get showAllDevices => _showAllDevices;
+
+  bool _isTreadmill(DiscoveredDevice device) {
+    if (device.id == preferences.treadmillId) return true;
+    // These services occur in the supported console's advertisements. The
+    // name is a fallback for packets that omit the service list.
+    final name = device.name.trim().toUpperCase();
+    return name.startsWith('TF-') ||
+        name.startsWith('FITSHOW') ||
+        [...device.serviceUuids, ...device.serviceData.keys].any(
+          (id) =>
+              id.expanded == Uuid.parse('fff0').expanded ||
+              id.expanded == Uuid.parse('1826').expanded,
+        );
+  }
+
+  int get hiddenDeviceCount =>
+      _devices.values.where((device) => !_isTreadmill(device)).length;
+
+  List<DiscoveredDevice> get devices => List.unmodifiable([
+    ..._devices.values.where((device) => device.id == preferences.treadmillId),
+    ..._devices.values.where(
+      (device) => device.id != preferences.treadmillId && _isTreadmill(device),
+    ),
+    if (_showAllDevices)
+      ..._devices.values.where((device) => !_isTreadmill(device)),
+  ]);
+
+  void setShowAllDevices(bool value) {
+    _showAllDevices = value;
+    notifyListeners();
+  }
+
   StreamSubscription<DiscoveredDevice>? _scan;
   StreamSubscription<ConnectionStateUpdate>? _connection;
   final List<StreamSubscription<List<int>>> _notifications = [];
@@ -350,6 +383,7 @@ class CaptureModel extends ChangeNotifier {
       await ble.prepareScan();
       if (generation != _scanGeneration || _disposed) return;
       _devices.clear();
+      _showAllDevices = false;
       scanning = true;
       status = _autoConnectId == null
           ? 'Buscando durante 15 segundos…'
@@ -357,10 +391,25 @@ class CaptureModel extends ChangeNotifier {
       _scan = ble.scan().listen(
         (device) {
           if (generation != _scanGeneration || !scanning || _disposed) return;
-          _devices[device.id] = device;
+          // Advertising and scan-response packets can contain different
+          // fields. Keep the name and services already seen in this scan.
+          final previous = _devices[device.id];
+          final discovered = previous == null
+              ? device
+              : device.copyWith(
+                  name: device.name.trim().isEmpty
+                      ? previous.name
+                      : device.name,
+                  serviceUuids: {
+                    ...previous.serviceUuids,
+                    ...device.serviceUuids,
+                  }.toList(),
+                  serviceData: {...previous.serviceData, ...device.serviceData},
+                );
+          _devices[device.id] = discovered;
           if (device.id == _autoConnectId) {
             _autoConnectId = null;
-            unawaited(connect(device));
+            unawaited(connect(discovered));
             return;
           }
           notifyListeners();
